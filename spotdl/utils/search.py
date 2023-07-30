@@ -234,9 +234,9 @@ def get_simple_songs(
             lists.append(Playlist.from_search_term(request, fetch_songs=False))
         elif "artist:" in request:
             lists.append(Artist.from_search_term(request, fetch_songs=False))
-        elif request == "saved":
+        elif request == "user:saved-tracks":
             lists.append(Saved.from_url(request, fetch_songs=False))
-        elif request == "all-user-playlists":
+        elif request == "user:all-playlists":
             lists.extend(get_all_user_playlists())
         elif request.endswith(".spotdl"):
             with open(request, "r", encoding="utf-8") as save_file:
