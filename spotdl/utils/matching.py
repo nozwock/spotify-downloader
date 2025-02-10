@@ -4,6 +4,7 @@ Module for all things matching related
 
 import logging
 from itertools import product, zip_longest
+from math import exp
 from typing import Dict, List, Optional, Tuple
 
 from spotdl.types.result import Result
@@ -351,8 +352,7 @@ def calc_main_artist_match(song: Song, result: Result) -> float:
                 f"Matched {song_artist} with {result_artist}: {new_artist_match}",
             )
 
-            if new_artist_match > main_artist_match:
-                main_artist_match = new_artist_match
+            main_artist_match = max(main_artist_match, new_artist_match)
 
     return main_artist_match
 
@@ -417,24 +417,48 @@ def artists_match_fixup1(song: Song, result: Result, score: float) -> float:
         slugify(", ".join(result.artists)) if result.artists else "",
     )
 
-    if channel_name_match > score:
-        score = channel_name_match
+    score = max(score, channel_name_match)
 
     # If artist match is still too low,
     # we fallback to matching all song artist names
     # with the result's title
-    if score <= 50:
+    if score <= 70:
         artist_title_match = 0.0
+        result_name = slugify(result.name).replace("-", "")
         for artist in song.artists:
             slug_artist = slugify(artist).replace("-", "")
 
-            if slug_artist in slugify(result.name).replace("-", ""):
+            if slug_artist in result_name:
                 artist_title_match += 1.0
 
         artist_title_match = (artist_title_match / len(song.artists)) * 100
 
-        if artist_title_match > score:
-            score = artist_title_match
+        score = max(score, artist_title_match)
+
+    # If artist match is still too low,
+    # we fallback to matching all song artist names
+    # with the result's artists
+    if score <= 70:
+        # Song artists: ['charlie-moncler', 'fukaj', 'mata', 'pedro']
+        # Result artists: ['fukaj-mata-charlie-moncler-und-pedro']
+
+        # For artist_list1
+        artist_list1 = []
+        for artist in song.artists:
+            artist_list1.extend(slugify(artist).split("-"))
+
+        # For artist_list2
+        artist_list2 = []
+        if result.artists:
+            for artist in result.artists:
+                artist_list2.extend(slugify(artist).split("-"))
+
+        artist_tuple1 = tuple(artist_list1)
+        artist_tuple2 = tuple(artist_list2)
+
+        artist_title_match = ratio(artist_tuple1, artist_tuple2)
+
+        score = max(score, artist_title_match)
 
     return score
 
@@ -493,8 +517,7 @@ def artists_match_fixup2(
 
         artist_title_match = ratio(artist_list1, artist_list2)
 
-        if artist_title_match > score:
-            score = artist_title_match
+        score = max(score, artist_title_match)
 
     return score
 
@@ -587,8 +610,7 @@ def calc_name_match(
             f"Second name match: {second_name_match}",
         )
 
-        if second_name_match > name_match:
-            name_match = second_name_match
+        name_match = max(name_match, second_name_match)
 
     return name_match
 
@@ -605,10 +627,9 @@ def calc_time_match(song: Song, result: Result) -> float:
     - time difference between song and result
     """
 
-    if result.duration > song.duration:
-        return 100 - (result.duration - song.duration)
-
-    return 100 - (song.duration - result.duration)
+    time_diff = abs(song.duration - result.duration)
+    score = exp(-0.1 * time_diff)
+    return score * 100
 
 
 def calc_album_match(song: Song, result: Result) -> float:
@@ -684,7 +705,7 @@ def order_results(
         artists_match = artists_match / (2 if len(song.artists) > 1 else 1)
         debug(song.song_id, result.result_id, f"First artists match: {artists_match}")
 
-        # # First attempt to fix artist match
+        # First attempt to fix artist match
         artists_match = artists_match_fixup1(song, result, artists_match)
         debug(
             song.song_id,
@@ -772,6 +793,15 @@ def order_results(
                 f"Average match /w album match: {average_match}",
             )
 
+        # Skip results with time match lower than 25%
+        if time_match < 25:
+            debug(
+                song.song_id,
+                result.result_id,
+                "Skipping result due to time match lower than 25%",
+            )
+            continue
+
         # If the time match is lower than 50%
         # and the average match is lower than 75%
         # we skip the result
@@ -784,11 +814,13 @@ def order_results(
             continue
 
         if (
-            not result.isrc_search and average_match <= 85 >= time_match
-        ) or result.source == "slider.kz":
+            (not result.isrc_search and average_match <= 85)
+            or result.source == "slider.kz"
+            or time_match < 0
+        ):
             # Don't add time to avg match if average match is not the best
             # (lower than 85%), always include time match if result is from
-            # slider.kz
+            # slider.kz or if time match is lower than 0
             average_match = (average_match + time_match) / 2
 
             debug(
@@ -796,6 +828,17 @@ def order_results(
                 result.result_id,
                 f"Average match /w time match: {average_match}",
             )
+
+            if (result.explicit is not None and song.explicit is not None) and (
+                result.explicit != song.explicit
+            ):
+                debug(
+                    song.song_id,
+                    result.result_id,
+                    "Lowering average match due to explicit mismatch",
+                )
+
+                average_match -= 5
 
         average_match = min(average_match, 100)
         debug(song.song_id, result.result_id, f"Final average match: {average_match}")

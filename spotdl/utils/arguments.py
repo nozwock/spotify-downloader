@@ -74,8 +74,11 @@ def parse_main_options(parser: _ArgumentGroup):
             "For album/playlist/artist searching, include 'album:', 'playlist:', 'artist:' \n"
             "(ie. 'album:the album name' you can mix these options to get more accurate results)"
             ".\n\n"
-            "To download liked songs use 'saved' as the query, or to download all user playlists\n"
-            "use 'all-user-playlists'.\n\n"
+            "To download liked songs use 'saved' as the query, to download all user playlists\n"
+            "use 'all-user-playlists, to download playlists that the user has created\n"
+            "use 'all-saved-playlists', to download all user liked playlists\n"
+            "use 'all-user-followed-artists', to download all user saved albums "
+            "use 'all-user-saved-albums' \n\n"
             "For manual audio matching, you can use the format 'YouTubeURL|SpotifyURL'\n"
             "You can only use album/playlist/tracks urls when "
             "downloading/matching youtube urls.\n"
@@ -125,6 +128,12 @@ def parse_main_options(parser: _ArgumentGroup):
         ),
     )
 
+    parser.add_argument(
+        "--genius-access-token",
+        dest="genius_token",
+        help="Lets you choose your own Genius access token.",
+    )
+
     # Add config argument
     parser.add_argument(
         "--config",
@@ -150,6 +159,14 @@ def parse_main_options(parser: _ArgumentGroup):
         action="store_const",
         const=False,
         help="Disable filtering results.",
+    )
+
+    # Add use only verified results argument
+    parser.add_argument(
+        "--album-type",
+        choices={"album", "single"},
+        help="Type of the album to search for. (album, single)",
+        type=str,
     )
 
     # Add use only verified results argument
@@ -332,7 +349,7 @@ def parse_output_options(parser: _ArgumentGroup):
             "The file to save/load the songs data from/to. "
             "It has to end with .spotdl. "
             "If combined with the download operation, it will save the songs data to the file. "
-            "Required for save/preload/sync"
+            "Required for save/sync (use - to print to stdout when using save). "
         ),
         required=len(sys.argv) > 1 and sys.argv[1] in ["save"],
     )
@@ -406,6 +423,13 @@ def parse_output_options(parser: _ArgumentGroup):
         help="Print errors (wrong songs, failed downloads etc) on exit, useful for long playlist",
     )
 
+    # Option to save errors to a file
+    parser.add_argument(
+        "--save-errors",
+        type=str,
+        help="Save errors (wrong songs, failed downloads etc) to a file",
+    )
+
     # Option to use sponsor block
     parser.add_argument(
         "--sponsor-block",
@@ -430,6 +454,17 @@ def parse_output_options(parser: _ArgumentGroup):
         const=True,
         help="Sets each track in a playlist to have the playlist's name as its album,\
             and album art as the playlist's icon",
+    )
+
+    # Option to set the track number & album of tracks, while retaining album art of each track, in
+    # a playlist to their index in the playlist & the name of playlist respectively.
+    parser.add_argument(
+        "--playlist-retain-track-cover",
+        action="store_const",
+        dest="playlist_retain_track_cover",
+        const=True,
+        help="Sets each track in a playlist to have the playlist's name as its album,\
+            while retaining album art of each track",
     )
 
     # Option to scan the output directory for existing files
@@ -526,8 +561,70 @@ def parse_output_options(parser: _ArgumentGroup):
         "--detect-formats",
         type=str,
         nargs="*",
-        help="Detect already downloaded songs with file format different from the --format option",
+        help=(
+            "Detect already downloaded songs with file format different from the --format option "
+            "(When combined with --m3u option, "
+            "only first detected format will be added to m3u file)"
+        ),
         choices=FFMPEG_FORMATS.keys(),
+    )
+
+    # download song in meta operation
+    parser.add_argument(
+        "--redownload",
+        action="store_const",
+        const=True,
+        help="to redownload the local song in diffrent format using --format for meta operation",
+    )
+
+    # skip album art for meta operation
+    parser.add_argument(
+        "--skip-album-art",
+        action="store_const",
+        const=True,
+        help="skip downloading album art for meta operation",
+    )
+
+    # Ignore songs from a paticular album
+    parser.add_argument(
+        "--ignore-albums",
+        type=str,
+        nargs="*",
+        help="ignores the song of the given albums",
+    )
+
+    # Skip explicit songs options
+    parser.add_argument(
+        "--skip-explicit", action="store_const", const=True, help="Skip explicit songs"
+    )
+
+    parser.add_argument(
+        "--proxy",
+        help="Http(s) proxy server for download song. Example: http://host:port",
+    )
+
+    # Skip songs having a skip flag file
+    parser.add_argument(
+        "--create-skip-file",
+        action="store_const",
+        const=True,
+        help="Create skip file for successfully downloaded file",
+    )
+
+    # Skip songs having a skip flag file
+    parser.add_argument(
+        "--respect-skip-file",
+        action="store_const",
+        const=True,
+        help="If a file with the extension .skip exists, skip download",
+    )
+
+    # Sync remove lrc files
+    parser.add_argument(
+        "--sync-remove-lrc",
+        action="store_const",
+        const=True,
+        help="Remove lrc files when using sync operation when downloading songs",
     )
 
 
@@ -587,6 +684,57 @@ def parse_web_options(parser: _ArgumentGroup):
         help="Keep the session directory after the web server is closed.",
     )
 
+    # Add keep sessions argument
+    parser.add_argument(
+        "--force-update-gui",
+        action="store_const",
+        const=True,
+        default=False,
+        help="Refresh the web server directory with a fresh git checkout",
+    )
+
+    # Add custom web gui repo
+    parser.add_argument(
+        "--web-gui-repo",
+        type=str,
+        help=(
+            "Custom web gui repo to use for the web server. "
+            "Example: https://github.com/spotdl/web-ui/tree/master/dist"
+        ),
+    )
+
+    # Add custom web gui repo
+    parser.add_argument(
+        "--web-gui-location",
+        type=str,
+        help="Path to the web gui directory to use for the web server.",
+    )
+
+    # Enable TLS for the web server
+    parser.add_argument(
+        "--enable-tls",
+        action="store_const",
+        const=True,
+        help="Enable TLS on the web server.",
+    )
+
+    # Add File Location of the TLS Certificate file (Pem Format)
+    parser.add_argument(
+        "--cert-file", type=str, help="File Path to the TLS Certificate (PEM format)."
+    )
+
+    # Add File Location of the TLS Private Key file (Pem Format)
+    parser.add_argument(
+        "--key-file", type=str, help="File Path to the TLS Private Key (PEM format)."
+    )
+
+    # Add File Location of the TLS Certificate Authority file (Pem Format)
+    parser.add_argument(
+        "--ca-file",
+        type=str,
+        help="File Path to the TLS Certificate Authority File (PEM format).",
+    )
+
 
 def parse_misc_options(parser: _ArgumentGroup):
     """
@@ -609,6 +757,15 @@ def parse_misc_options(parser: _ArgumentGroup):
         action="store_const",
         const=True,
         help="Use a simple tui.",
+    )
+
+    # Add log format argument
+    parser.add_argument(
+        "--log-format",
+        help=(
+            "Custom logging format to use. More info: "
+            "https://docs.python.org/3/library/logging.html#logrecord-attributes"
+        ),
     )
 
 

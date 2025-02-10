@@ -27,7 +27,14 @@ def url(
     """
 
     # Parse the query
-    songs = parse_query(query, downloader.settings["threads"])
+    songs = parse_query(
+        query=query,
+        threads=downloader.settings["threads"],
+        use_ytm_data=downloader.settings["ytm_data"],
+        playlist_numbering=downloader.settings["playlist_numbering"],
+        album_type=downloader.settings["album_type"],
+        playlist_retain_track_cover=downloader.settings["playlist_retain_track_cover"],
+    )
 
     def process_song(song: Song):
         try:

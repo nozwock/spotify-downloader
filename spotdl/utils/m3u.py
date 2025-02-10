@@ -2,10 +2,11 @@
 Module for creating m3u content and writing it to a file.
 """
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from spotdl.types.song import Song
-from spotdl.utils.formatter import create_file_name
+from spotdl.utils.formatter import create_file_name, sanitize_string
 
 __all__ = [
     "create_m3u_content",
@@ -20,6 +21,7 @@ def create_m3u_content(
     file_extension: str,
     restrict: Optional[str] = None,
     short: bool = False,
+    detect_formats: Optional[List[str]] = None,
 ) -> str:
     """
     Create m3u content and return it as a string.
@@ -30,17 +32,38 @@ def create_m3u_content(
     - file_extension: the file extension to use
     - restrict: sanitization to apply to the filename
     - short: whether to use the short version of the template
+    - detect_formats: the formats to detect for existing files
 
     ### Returns
     - the m3u content as a string
     """
 
-    text = ""
+    text = "#EXTM3U\n"
+
     for song in song_list:
-        text += (
-            str(create_file_name(song, template, file_extension, restrict, short))
-            + "\n"
+        metadata = create_file_name(
+            song, "#EXTINF:{duration},{album-artist} - {title}", ""
         )
+        text += str(metadata) + "\n"
+
+        if not detect_formats:
+            file_name = create_file_name(
+                song, template, file_extension, restrict, short
+            )
+
+            text += str(file_name) + "\n"
+        else:
+            for file_ext in detect_formats:
+                file_name = create_file_name(song, template, file_ext, restrict, short)
+
+                if file_name.exists():
+                    text += str(file_name) + "\n"
+                    break
+
+                file_name = create_file_name(
+                    song, template, file_extension, restrict, short
+                )
+                text += str(file_name) + "\n"
 
     return text
 
@@ -52,18 +75,19 @@ def gen_m3u_files(
     file_extension: str,
     restrict: Optional[str] = None,
     short: bool = False,
+    detect_formats: Optional[List[str]] = None,
 ):
     """
     Create an m3u8 filename from the query.
 
     ### Arguments
-    - query: the query
+    - songs: the list of songs
     - file_name: the file name to use
-    - song_list: the list of songs
     - template: the output file template to use
     - file_extension: the file extension to use
     - restrict: sanitization to apply to the filename
     - short: whether to use the short version of the template
+    - detect_formats: the formats to detect
     """
 
     # If no file name is provided, use the first list's name
@@ -80,7 +104,7 @@ def gen_m3u_files(
         file_name += "/{list[0]}.m3u8"
 
     # Check if the file name ends with .m3u or .m3u8
-    if not file_name.endswith(".m3u") or not file_name.endswith(".m3u8"):
+    if not file_name.endswith(".m3u") and not file_name.endswith(".m3u8"):
         file_name += ".m3u8"
 
     lists_object: Dict[str, List[Song]] = {}
@@ -105,6 +129,7 @@ def gen_m3u_files(
                 file_extension,
                 restrict,
                 short,
+                detect_formats,
             )
     elif "{list[" in file_name and "]}" in file_name:
         # Create a single m3u file for specified song list name
@@ -115,6 +140,7 @@ def gen_m3u_files(
             file_extension,
             restrict,
             short,
+            detect_formats,
         )
     else:
         # Use the provided file name
@@ -125,6 +151,7 @@ def gen_m3u_files(
             file_extension,
             restrict,
             short,
+            detect_formats,
         )
 
 
@@ -135,6 +162,7 @@ def create_m3u_file(
     file_extension: str,
     restrict: Optional[str] = None,
     short: bool = False,
+    detect_formats: Optional[List[str]] = None,
 ) -> str:
     """
     Create the m3u file.
@@ -146,16 +174,26 @@ def create_m3u_file(
     - file_extension: the file extension to use
     - restrict: sanitization to apply to the filename
     - short: whether to use the short version of the template
+    - detect_formats: the formats to detect
 
     ### Returns
     - the m3u content as a string
     """
 
     m3u_content = create_m3u_content(
-        song_list, template, file_extension, restrict, short
+        song_list,
+        template,
+        file_extension,
+        restrict,
+        short,
+        detect_formats,
     )
 
-    with open(file_name, "w", encoding="utf-8") as m3u_file:
+    file_path = Path(
+        *(sanitize_string(part) for part in Path(file_name).parts)
+    ).absolute()
+
+    with open(file_path, "w", encoding="utf-8") as m3u_file:
         m3u_file.write(m3u_content)
 
     return m3u_content

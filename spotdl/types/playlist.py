@@ -2,6 +2,7 @@
 Playlist module for retrieving playlist data from Spotify.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
@@ -9,6 +10,8 @@ from spotdl.types.song import Song, SongList
 from spotdl.utils.spotify import SpotifyClient
 
 __all__ = ["Playlist", "PlaylistError"]
+
+logger = logging.getLogger(__name__)
 
 
 class PlaylistError(Exception):
@@ -55,11 +58,13 @@ class Playlist(SongList):
             "cover_url": (
                 max(
                     playlist["images"],
-                    key=lambda i: 0
-                    if i["width"] is None or i["height"] is None
-                    else i["width"] * i["height"],
+                    key=lambda i: (
+                        0
+                        if i["width"] is None or i["height"] is None
+                        else i["width"] * i["height"]
+                    ),
                 )["url"]
-                if (len(playlist["images"]) > 0)
+                if (playlist.get("images") is not None and len(playlist["images"]) > 0)
                 else ""
             ),
         }
@@ -81,26 +86,27 @@ class Playlist(SongList):
             tracks.extend(playlist_response["items"])
 
         songs = []
-        for track in tracks:
-            if (
-                not isinstance(track, dict)
-                or track.get("track") is None
-                or track.get("track", {}).get("is_local")
-            ):
+        for track_no, track in enumerate(tracks):
+            if not isinstance(track, dict) or track.get("track") is None:
                 continue
 
-            track_meta = track.get("track", {})
+            track_meta = track["track"]
+
+            if track_meta.get("is_local") or track_meta.get("type") != "track":
+                logger.warning(
+                    "Skipping track: %s local tracks and %s are not supported",
+                    track_meta.get("id"),
+                    track_meta.get("type"),
+                )
+
+                continue
+
             track_id = track_meta.get("id")
-            if (
-                track_meta == {}
-                or track_id is None
-                or track_meta.get("duration_ms") == 0
-            ):
+            if track_id is None or track_meta.get("duration_ms") == 0:
                 continue
 
             album_meta = track_meta.get("album", {})
             release_date = album_meta.get("release_date")
-
             artists = [artist["name"] for artist in track_meta.get("artists", [])]
             song = Song.from_missing_data(
                 name=track_meta["name"],
@@ -108,11 +114,14 @@ class Playlist(SongList):
                 artist=artists[0],
                 album_id=album_meta.get("id"),
                 album_name=album_meta.get("name"),
-                album_artist=album_meta.get("artists", [])[0]["name"]
-                if album_meta.get("artists")
-                else None,
+                album_artist=(
+                    album_meta.get("artists", [])[0]["name"]
+                    if album_meta.get("artists")
+                    else None
+                ),
+                album_type=album_meta.get("album_type"),
                 disc_number=track_meta["disc_number"],
-                duration=track_meta["duration_ms"],
+                duration=int(track_meta["duration_ms"] / 1000),
                 year=release_date[:4] if release_date else None,
                 date=release_date,
                 track_number=track_meta["track_number"],
@@ -121,11 +130,14 @@ class Playlist(SongList):
                 explicit=track_meta["explicit"],
                 url=track_meta["external_urls"]["spotify"],
                 isrc=track_meta.get("external_ids", {}).get("isrc"),
-                cover_url=max(
-                    album_meta["images"], key=lambda i: i["width"] * i["height"]
-                )["url"]
-                if (len(album_meta.get("images", [])) > 0)
-                else None,
+                cover_url=(
+                    max(album_meta["images"], key=lambda i: i["width"] * i["height"])[
+                        "url"
+                    ]
+                    if (len(album_meta.get("images", [])) > 0)
+                    else None
+                ),
+                list_position=track_no + 1,
             )
 
             songs.append(song)

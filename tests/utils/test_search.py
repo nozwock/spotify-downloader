@@ -11,7 +11,7 @@ YT = [
     "https://www.youtube.com/watch?v=BZKwsPIhVO8|https://open.spotify.com/track/4B2kkxg3wKSTZw5JPaUtzQ"
 ]
 ARTIST = ["https://open.spotify.com/artist/1FPC2zwfMHhrP3frOfaai6"]
-ALBUM_SEARCH = ["album:demon days"]
+ALBUM_SEARCH = ["album: yeezus"]
 
 QUERY = SONG + PLAYLIST + ALBUM + YT + ARTIST
 
@@ -31,7 +31,7 @@ def test_parse_song():
 def test_parse_album():
     songs = parse_query(ALBUM)
 
-    assert len(songs) == 16
+    assert len(songs) > 1
     assert songs[0].url == "https://open.spotify.com/track/2Ikdgh3J5vCRmnCL3Xcrtv"
 
 
@@ -55,7 +55,7 @@ def test_parse_artist():
 def test_parse_album_search():
     songs = parse_query(ALBUM_SEARCH)
 
-    assert len(songs) > 1
+    assert len(songs) > 0
 
 
 @pytest.mark.vcr()

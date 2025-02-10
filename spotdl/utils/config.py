@@ -28,6 +28,7 @@ __all__ = [
     "get_cache_path",
     "get_temp_path",
     "get_errors_path",
+    "get_web_ui_path",
     "get_config",
     "create_settings_type",
     "create_settings",
@@ -136,6 +137,25 @@ def get_errors_path() -> Path:
         os.mkdir(errors_path)
 
     return errors_path
+
+
+def get_web_ui_path() -> Path:
+    """
+    Get the path to the web-ui folder.
+
+    ### Returns
+    - The path to the web-ui folder.
+
+    ### Notes
+    - If the web-ui directory does not exist, it will be created.
+    """
+
+    web_ui_path = get_spotdl_path() / "web-ui"
+
+    if not web_ui_path.exists():
+        os.mkdir(web_ui_path)
+
+    return web_ui_path
 
 
 def get_config() -> Dict[str, Any]:
@@ -248,6 +268,30 @@ def modernize_settings(options: DownloaderOptions):
         options["restrict"] = "strict"
 
 
+class GlobalConfig:
+    """
+    Class to store global configuration
+    """
+
+    parameters: Dict[str, Any] = {}
+
+    @classmethod
+    def set_parameter(cls, key, value):
+        """
+        Set a parameter for the download config
+        """
+
+        cls.parameters[key] = value
+
+    @classmethod
+    def get_parameter(cls, key):
+        """
+        Get a parameter from the download config
+        """
+
+        return cls.parameters.get(key, None)
+
+
 SPOTIFY_OPTIONS: SpotifyOptions = {
     "client_id": "5f573c9620494bae87890c0f08a60293",
     "client_secret": "212476d9b0f3472eaa762d90b19b0ba8",
@@ -263,7 +307,9 @@ SPOTIFY_OPTIONS: SpotifyOptions = {
 DOWNLOADER_OPTIONS: DownloaderOptions = {
     "audio_providers": ["youtube-music"],
     "lyrics_providers": ["genius", "azlyrics", "musixmatch"],
+    "genius_token": "alXXDbPZtK1m2RrZ8I4k2Hn8Ahsd0Gh_o076HYvcdlBvmc0ULL1H8Z8xRlew5qaG",
     "playlist_numbering": False,
+    "playlist_retain_track_cover": False,
     "scan_for_songs": False,
     "m3u": None,
     "output": "{artists} - {title}.{output-ext}",
@@ -275,6 +321,7 @@ DOWNLOADER_OPTIONS: DownloaderOptions = {
     "format": "mp3",
     "save_file": None,
     "filter_results": True,
+    "album_type": None,
     "threads": 4,
     "cookie_file": None,
     "restrict": None,
@@ -296,6 +343,16 @@ DOWNLOADER_OPTIONS: DownloaderOptions = {
     "max_filename_length": None,
     "yt_dlp_args": None,
     "detect_formats": None,
+    "save_errors": None,
+    "ignore_albums": None,
+    "proxy": None,
+    "skip_explicit": False,
+    "log_format": None,
+    "redownload": False,
+    "skip_album_art": False,
+    "create_skip_file": False,
+    "respect_skip_file": False,
+    "sync_remove_lrc": False,
 }
 
 WEB_OPTIONS: WebOptions = {
@@ -303,8 +360,15 @@ WEB_OPTIONS: WebOptions = {
     "port": 8800,
     "host": "localhost",
     "keep_alive": False,
+    "enable_tls": False,
+    "key_file": None,
+    "cert_file": None,
+    "ca_file": None,
     "allowed_origins": None,
     "keep_sessions": False,
+    "force_update_gui": False,
+    "web_gui_repo": None,
+    "web_gui_location": None,
 }
 
 # Type: ignore because of the issues above

@@ -42,7 +42,7 @@ Refer to our [Installation Guide](https://spotdl.rtfd.io/en/latest/installation/
 - On Termux
   - `curl -L https://raw.githubusercontent.com/spotDL/spotify-downloader/master/scripts/termux.sh | sh`
 - Arch
-  - There is an [Arch User Repository (AUR) package](https://aur.archlinux.org/packages/python-spotdl/) for
+  - There is an [Arch User Repository (AUR) package](https://aur.archlinux.org/packages/spotdl/) for
     spotDL.
 - Docker
   - Build image:
@@ -109,10 +109,12 @@ For a list of all **options** use ```spotdl -h```
         `spotdl save [query] --save-file {filename}.spotdl`
 
 - `web`: Starts a web interface instead of using the command line. However, it has limited features and only supports downloading single songs.
+    - Usage:
+        `spotdl web`
 
 - `url`: Get direct download link for each song from the query.
     - Usage:
-        `spotdl web [query]`
+        `spotdl url [query]`
 
 - `sync`: Updates directories. Compares the directory with the current state of the playlist. Newly added songs will be downloaded and removed songs will be deleted. No other songs will be downloaded and no other files will be deleted.
 
@@ -137,19 +139,12 @@ spotDL uses YouTube as a source for music downloads. This method is used to avoi
 
 spotDL downloads music from YouTube and is designed to always download the highest possible bitrate; which is 128 kbps for regular users and 256 kbps for YouTube Music premium users.
 
-Check the [Audio Formats](usage#audio-formats-and-quality) page for more info.
+Check the [Audio Formats](usage.md#audio-formats-and-quality) page for more info.
 
 ## Contributing
 
-Interested in contributing? Check out our [CONTRIBUTING.md](CONTRIBUTING) to find
+Interested in contributing? Check out our [CONTRIBUTING.md](CONTRIBUTING.md) to find
 resources around contributing along with a guide on how to set up a development environment.
-
-## Donate
-
-help support the development and maintenance of the software ❤️
-
-[![paypal](https://img.shields.io/badge/paypal-%2300457C.svg?&style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/kko7)
-[![kofi](https://img.shields.io/badge/kofi-%23F16061.svg?&style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/xnetcat)
 
 ## License
 

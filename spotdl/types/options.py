@@ -43,7 +43,9 @@ class DownloaderOptions(TypedDict):
 
     audio_providers: List[str]
     lyrics_providers: List[str]
+    genius_token: str
     playlist_numbering: bool
+    playlist_retain_track_cover: bool
     scan_for_songs: bool
     m3u: Optional[str]
     output: str
@@ -55,6 +57,7 @@ class DownloaderOptions(TypedDict):
     format: str
     save_file: Optional[str]
     filter_results: bool
+    album_type: Optional[str]
     threads: int
     cookie_file: Optional[str]
     restrict: Optional[str]
@@ -75,7 +78,17 @@ class DownloaderOptions(TypedDict):
     sync_without_deleting: bool
     max_filename_length: Optional[int]
     yt_dlp_args: Optional[str]
-    detect_formats: Optional[str]
+    detect_formats: Optional[List[str]]
+    save_errors: Optional[str]
+    ignore_albums: Optional[List[str]]
+    proxy: Optional[str]
+    skip_explicit: Optional[bool]
+    log_format: Optional[str]
+    redownload: Optional[bool]
+    skip_album_art: Optional[bool]
+    create_skip_file: Optional[bool]
+    respect_skip_file: Optional[bool]
+    sync_remove_lrc: Optional[bool]
 
 
 class WebOptions(TypedDict):
@@ -87,8 +100,15 @@ class WebOptions(TypedDict):
     port: int
     host: str
     keep_alive: bool
+    enable_tls: bool
+    key_file: Optional[str]
+    cert_file: Optional[str]
+    ca_file: Optional[str]
     allowed_origins: Optional[List[str]]
     keep_sessions: bool
+    force_update_gui: bool
+    web_gui_repo: Optional[str]
+    web_gui_location: Optional[str]
 
 
 class SpotDLOptions(SpotifyOptions, DownloaderOptions, WebOptions):
@@ -120,7 +140,9 @@ class DownloaderOptionalOptions(TypedDict, total=False):
 
     audio_providers: List[str]
     lyrics_providers: List[str]
+    genius_token: str
     playlist_numbering: bool
+    playlist_retain_track_cover: bool
     scan_for_songs: bool
     m3u: Optional[str]
     output: str
@@ -132,6 +154,7 @@ class DownloaderOptionalOptions(TypedDict, total=False):
     format: str
     save_file: Optional[str]
     filter_results: bool
+    album_type: Optional[str]
     threads: int
     cookie_file: Optional[str]
     restrict: Optional[str]
@@ -152,7 +175,16 @@ class DownloaderOptionalOptions(TypedDict, total=False):
     sync_without_deleting: bool
     max_filename_length: Optional[int]
     yt_dlp_args: Optional[str]
-    detect_formats: Optional[str]
+    detect_formats: Optional[List[str]]
+    save_errors: Optional[str]
+    proxy: Optional[str]
+    skip_explicit: Optional[bool]
+    log_format: Optional[str]
+    redownload: Optional[bool]
+    skip_album_art: Optional[bool]
+    create_skip_file: Optional[bool]
+    respect_skip_file: Optional[bool]
+    sync_remove_lrc: Optional[bool]
 
 
 class WebOptionalOptions(TypedDict, total=False):
@@ -164,8 +196,15 @@ class WebOptionalOptions(TypedDict, total=False):
     port: int
     host: str
     keep_alive: bool
+    enable_tls: bool
+    key_file: Optional[str]
+    cert_file: Optional[str]
+    ca_file: Optional[str]
     allowed_origins: Optional[str]
     keep_sessions: bool
+    force_update_gui: bool
+    web_gui_repo: Optional[str]
+    web_gui_location: Optional[str]
 
 
 class SpotDLOptionalOptions(

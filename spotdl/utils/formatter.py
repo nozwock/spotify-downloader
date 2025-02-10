@@ -16,6 +16,7 @@ import pykakasi
 from rapidfuzz import fuzz
 from slugify import slugify as py_slugify
 from yt_dlp.options import create_parser
+from yt_dlp.options import optparse as yt_dlp_optparse
 from yt_dlp.utils import sanitize_filename
 
 from spotdl.types.song import Song
@@ -209,13 +210,18 @@ def format_query(
         template = "{artists} - {title}.{output-ext}"
 
     # Remove artists from the list that are already in the title
-    artists = [
-        artist for artist in song.artists if slugify(artist) not in slugify(song.name)
-    ]
+    if short:
+        artists = [
+            artist
+            for artist in song.artists
+            if slugify(artist) not in slugify(song.name)
+        ]
 
-    # Add the main artist again to the list
-    if len(artists) == 0 or artists[0] != song.artists[0]:
-        artists.insert(0, song.artists[0])
+        # Add the main artist again to the list
+        if len(artists) == 0 or artists[0] != song.artists[0]:
+            artists.insert(0, song.artists[0])
+    else:
+        artists = song.artists
 
     artists_str = ", ".join(artists)
 
@@ -232,7 +238,7 @@ def format_query(
         "{duration}": song.duration,
         "{year}": song.year,
         "{original-date}": song.date,
-        "{track-number}": f"{song.track_number:02d}" if song.track_number else "",
+        "{track-number}": f"{int(song.track_number):02d}" if song.track_number else "",
         "{tracks-count}": song.tracks_count,
         "{isrc}": song.isrc,
         "{track-id}": song.song_id,
@@ -280,7 +286,7 @@ def create_search_query(
     """
 
     # If template does not contain any of the keys,
-    # append {artist} - {title} at the beggining of the template
+    # append {artist} - {title} at the beginning of the template
     if not any(key in template for key in VARS):
         template = "{artist} - {title}" + template
 
@@ -510,7 +516,7 @@ def restrict_filename(pathobj: Path, strict: bool = True) -> Path:
     - Based on the `sanitize_filename` function from yt-dlp
     """
     if strict:
-        result = sanitize_filename(pathobj.name, True, False)
+        result = sanitize_filename(pathobj.name, True, False)  # type: ignore
         result = result.replace("_-_", "-")
     else:
         result = (
@@ -602,43 +608,20 @@ def create_path_object(string: str) -> Path:
     return Path(*santitized_parts)
 
 
-def args_to_ytdlp_options(argument_list: List[str]) -> Dict[str, Any]:
+def args_to_ytdlp_options(
+    argument_list: List[str], defaults: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Convert a list of arguments to a dictionary of options.
 
     ### Arguments
     - argument_list: the list of arguments
+    - defaults: the default options
 
     ### Returns
     - the dictionary of options
     """
 
-    options_dict: Dict[str, Any] = {}
-    for option_group in YT_DLP_PARSER.option_groups:
-        for option in option_group.option_list:
-            for opts in option._long_opts:  # pylint: disable=protected-access
-                try:
-                    index = argument_list.index(opts)
-                except ValueError:
-                    continue
+    new_args = YT_DLP_PARSER.parse_args(argument_list, yt_dlp_optparse.Values(defaults))
 
-                if option.action == "store_true":
-                    options_dict[option.dest] = True
-                    continue
-
-                if option.action == "store_false":
-                    options_dict[option.dest] = False
-                    continue
-
-                if option.action == "store":
-                    values = []
-                    val_index = index
-                    while val_index + 1 < len(argument_list) and not argument_list[
-                        val_index + 1
-                    ].startswith("--"):
-                        values.append(argument_list[val_index + 1])
-                        val_index += 1
-
-                    options_dict[option.dest] = values
-
-    return options_dict
+    return vars(new_args[0])

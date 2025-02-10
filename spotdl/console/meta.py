@@ -12,7 +12,7 @@ from spotdl.types.song import Song
 from spotdl.utils.ffmpeg import FFMPEG_FORMATS
 from spotdl.utils.lrc import generate_lrc
 from spotdl.utils.metadata import embed_metadata, get_file_metadata
-from spotdl.utils.search import QueryError, get_search_results, reinit_song
+from spotdl.utils.search import QueryError, get_search_results, parse_query, reinit_song
 
 __all__ = ["meta"]
 
@@ -52,6 +52,7 @@ def meta(query: List[str], downloader: Downloader) -> None:
             paths.append(test_path)
 
     def process_file(file: Path):
+        # metadata of the file, url is present in the file.
         song_meta = get_file_metadata(file, downloader.settings["id3_separator"])
 
         # Check if song has metadata
@@ -129,7 +130,7 @@ def meta(query: List[str], downloader: Downloader) -> None:
             song.lyrics = song_meta.get("lyrics")
 
         # Apply metadata to the song
-        embed_metadata(file, song)
+        embed_metadata(file, song, skip_album_art=downloader.settings["skip_album_art"])
 
         logger.info("Applied metadata to %s", file.name)
 
@@ -144,7 +145,6 @@ def meta(query: List[str], downloader: Downloader) -> None:
                 logger.info("Saved lrc file for %s", song.display_name)
             else:
                 logger.info("Could not find lrc file for %s", song.display_name)
-
         return None
 
     async def pool_worker(file_path: Path) -> None:
@@ -159,3 +159,26 @@ def meta(query: List[str], downloader: Downloader) -> None:
 
     # call all task asynchronously, and wait until all are finished
     downloader.loop.run_until_complete(asyncio.gather(*tasks))
+
+    # to re-download the local songs
+    if downloader.settings["redownload"]:
+        songs_url: List[str] = []
+        for file in paths:
+            meta_data = get_file_metadata(
+                Path(file), downloader.settings["id3_separator"]
+            )
+            if meta_data and meta_data["url"]:
+                songs_url.append(meta_data["url"])
+
+        songs_list = parse_query(
+            query=songs_url,
+            threads=downloader.settings["threads"],
+            use_ytm_data=downloader.settings["ytm_data"],
+            playlist_numbering=downloader.settings["playlist_numbering"],
+            album_type=downloader.settings["album_type"],
+            playlist_retain_track_cover=downloader.settings[
+                "playlist_retain_track_cover"
+            ],
+        )
+
+        downloader.download_multiple_songs(songs_list)

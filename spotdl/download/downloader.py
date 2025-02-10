@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import shutil
 import sys
 import traceback
@@ -21,7 +22,6 @@ from spotdl.providers.audio import (
     AudioProvider,
     BandCamp,
     Piped,
-    SliderKZ,
     SoundCloud,
     YouTube,
     YouTubeMusic,
@@ -32,6 +32,7 @@ from spotdl.types.song import Song
 from spotdl.utils.archive import Archive
 from spotdl.utils.config import (
     DOWNLOADER_OPTIONS,
+    GlobalConfig,
     create_settings_type,
     get_errors_path,
     get_temp_path,
@@ -55,7 +56,6 @@ __all__ = [
 AUDIO_PROVIDERS: Dict[str, Type[AudioProvider]] = {
     "youtube": YouTube,
     "youtube-music": YouTubeMusic,
-    "slider-kz": SliderKZ,
     "soundcloud": SoundCloud,
     "bandcamp": BandCamp,
     "piped": Piped,
@@ -78,6 +78,7 @@ SPONSOR_BLOCK_CATEGORIES = {
     "interaction": "Interaction Reminder",
     "music_offtopic": "Non-Music Section",
 }
+
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,8 @@ class Downloader:
 
                 found_files = gather_known_songs(self.settings["output"], scan_format)
 
+                logger.debug("Found %s %s files", len(found_files), scan_format)
+
                 for song_url, song_paths in found_files.items():
                     known_paths = self.known_songs.get(song_url)
                     if known_paths is None:
@@ -184,8 +187,13 @@ class Downloader:
             lyrics_class = LYRICS_PROVIDERS.get(lyrics_provider)
             if lyrics_class is None:
                 raise DownloaderError(f"Invalid lyrics provider: {lyrics_provider}")
-
-            self.lyrics_providers.append(lyrics_class())
+            if lyrics_provider == "genius":
+                access_token = self.settings.get("genius_token")
+                if not access_token:
+                    raise DownloaderError("Genius token not found in settings")
+                self.lyrics_providers.append(Genius(access_token))
+            else:
+                self.lyrics_providers.append(lyrics_class())
 
         # Initialize audio providers
         self.audio_providers: List[AudioProvider] = []
@@ -207,10 +215,25 @@ class Downloader:
         # Initialize list of errors
         self.errors: List[str] = []
 
+        # Initialize proxy server
+        proxy = self.settings["proxy"]
+        proxies = None
+        if proxy:
+            if not re.match(
+                pattern=r"^(http|https):\/\/(?:(\w+)(?::(\w+))?@)?((?:\d{1,3})(?:\.\d{1,3}){3})(?::(\d{1,5}))?$",  # pylint: disable=C0301
+                string=proxy,
+            ):
+                raise DownloaderError(f"Invalid proxy server: {proxy}")
+            proxies = {"http": proxy, "https": proxy}
+            logger.info("Setting proxy server: %s", proxy)
+
+        GlobalConfig.set_parameter("proxies", proxies)
+
         # Initialize archive
         self.url_archive = Archive()
         if self.settings["archive"]:
             self.url_archive.load(self.settings["archive"])
+
         logger.debug("Archive: %d urls", len(self.url_archive))
 
         logger.debug("Downloader initialized")
@@ -279,6 +302,19 @@ class Downloader:
             for error in self.errors:
                 logger.error(error)
 
+        if self.settings["save_errors"]:
+            with open(
+                self.settings["save_errors"], "a", encoding="utf-8"
+            ) as error_file:
+                if len(self.errors) > 0:
+                    error_file.write(
+                        f"{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}\n"
+                    )
+                for error in self.errors:
+                    error_file.write(f"{error}\n")
+
+            logger.info("Saved errors to %s", self.settings["save_errors"])
+
         # Save archive
         if self.settings["archive"]:
             for result in results:
@@ -307,6 +343,7 @@ class Downloader:
                 self.settings["format"],
                 self.settings["restrict"],
                 False,
+                self.settings["detect_formats"],
             )
 
         # Save results to a file
@@ -385,7 +422,9 @@ class Downloader:
 
         return None
 
-    def search_and_download(self, song: Song) -> Tuple[Song, Optional[Path]]:
+    def search_and_download(  # pylint: disable=R0911
+        self, song: Song
+    ) -> Tuple[Song, Optional[Path]]:
         """
         Search for the song and download it.
 
@@ -418,6 +457,7 @@ class Downloader:
                 restrict=self.settings["restrict"],
                 file_name_length=self.settings["max_filename_length"],
             )
+
         except Exception:
             song = reinit_song(song)
 
@@ -431,7 +471,11 @@ class Downloader:
 
             reinitialized = True
 
-        # Initalize the progress tracker
+        if song.explicit is True and self.settings["skip_explicit"] is True:
+            logger.info("Skipping explicit song: %s", song.display_name)
+            return song, None
+
+        # Initialize the progress tracker
         display_progress_tracker = self.progress_handler.get_new_tracker(song)
 
         try:
@@ -450,7 +494,8 @@ class Downloader:
                 and dup_song_path.exists()
             ]
 
-            file_exists = output_file.exists() or dup_song_paths
+            # Checking if file already exists in all subfolders of output directory
+            file_exists = file_exists = output_file.exists() or dup_song_paths
             if not self.settings["scan_for_songs"]:
                 for file_extension in self.scan_formats:
                     ext_path = output_file.with_suffix(f".{file_extension}")
@@ -461,12 +506,26 @@ class Downloader:
                 logger.debug(
                     "Found duplicate songs for %s at %s",
                     song.display_name,
-                    dup_song_paths,
+                    ", ".join(
+                        [f"'{str(dup_song_path)}'" for dup_song_path in dup_song_paths]
+                    ),
                 )
 
             # If the file already exists and we don't want to overwrite it,
             # we can skip the download
-            if file_exists and self.settings["overwrite"] == "skip":
+            if (  # pylint: disable=R1705
+                Path(str(output_file.absolute()) + ".skip").exists()
+                and self.settings["respect_skip_file"]
+            ):
+                logger.info(
+                    "Skipping %s (skip file found) %s",
+                    song.display_name,
+                    "",
+                )
+
+                return song, output_file if output_file.exists() else None
+
+            elif file_exists and self.settings["overwrite"] == "skip":
                 logger.info(
                     "Skipping %s (file already exists) %s",
                     song.display_name,
@@ -512,7 +571,7 @@ class Downloader:
                         logger.info("Removing duplicate file: %s", dup_song_path)
 
                         dup_song_path.unlink()
-                    except (PermissionError, OSError) as exc:
+                    except (PermissionError, OSError, Exception) as exc:
                         logger.debug(
                             "Could not remove duplicate file: %s, error: %s",
                             dup_song_path,
@@ -543,7 +602,8 @@ class Downloader:
                     # Get the most recent duplicate song path and remove the rest
                     most_recent_duplicate = max(
                         dup_song_paths,
-                        key=lambda dup_song_path: dup_song_path.stat().st_mtime,
+                        key=lambda dup_song_path: dup_song_path.stat().st_mtime
+                        and dup_song_path.suffix == output_file.suffix,
                     )
 
                     # Remove the rest of the duplicate song paths
@@ -562,13 +622,33 @@ class Downloader:
                             )
 
                     # Move the old file to the new location
-                    if most_recent_duplicate:
+                    if (
+                        most_recent_duplicate
+                        and most_recent_duplicate.suffix == output_file.suffix
+                    ):
                         most_recent_duplicate.replace(
                             output_file.with_suffix(f".{self.settings['format']}")
                         )
 
+                if (
+                    most_recent_duplicate
+                    and most_recent_duplicate.suffix != output_file.suffix
+                ):
+                    logger.info(
+                        "Could not move duplicate file: %s, different file extension",
+                        most_recent_duplicate,
+                    )
+
+                    display_progress_tracker.notify_complete()
+
+                    return song, None
+
                 # Update the metadata
-                embed_metadata(output_file=output_file, song=song)
+                embed_metadata(
+                    output_file=output_file,
+                    song=song,
+                    skip_album_art=self.settings["skip_album_art"],
+                )
 
                 logger.info(
                     f"Updated metadata for {song.display_name}"
@@ -675,6 +755,12 @@ class Downloader:
                     progress_handler=display_progress_tracker.ffmpeg_progress_hook,
                 )
 
+                if self.settings["create_skip_file"]:
+                    with open(
+                        str(output_file) + ".skip", mode="w", encoding="utf-8"
+                    ) as _:
+                        pass
+
             # Remove the temp file
             if temp_file.exists():
                 try:
@@ -756,7 +842,12 @@ class Downloader:
                         Path(file_to_delete).unlink()
 
             try:
-                embed_metadata(output_file, song, self.settings["id3_separator"])
+                embed_metadata(
+                    output_file,
+                    song,
+                    id3_separator=self.settings["id3_separator"],
+                    skip_album_art=self.settings["skip_album_art"],
+                )
             except Exception as exception:
                 raise MetadataError(
                     "Failed to embed metadata to the song"

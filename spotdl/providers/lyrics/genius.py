@@ -8,6 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from spotdl.providers.lyrics.base import LyricsProvider
+from spotdl.utils.config import GlobalConfig
 
 __all__ = ["Genius"]
 
@@ -17,19 +18,23 @@ class Genius(LyricsProvider):
     Genius lyrics provider class.
     """
 
-    def __init__(self):
+    def __init__(self, access_token: str):
         """
         Init the lyrics provider search and set headers.
         """
 
         super().__init__()
 
+        self.access_token = access_token
+
         self.headers.update(
             {
-                "Authorization": "Bearer "
-                "alXXDbPZtK1m2RrZ8I4k2Hn8Ahsd0Gh_o076HYvcdlBvmc0ULL1H8Z8xRlew5qaG",
+                "Authorization": f"Bearer {self.access_token}",
             }
         )
+
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
 
     def get_results(self, name: str, artists: List[str], **_) -> Dict[str, str]:
         """
@@ -47,11 +52,12 @@ class Genius(LyricsProvider):
         artists_str = ", ".join(artists)
         title = f"{name} - {artists_str}"
 
-        search_response = requests.get(
+        search_response = self.session.get(
             "https://api.genius.com/search",
             params={"q": title},
             headers=self.headers,
             timeout=10,
+            proxies=GlobalConfig.get_parameter("proxies"),
         )
 
         results: Dict[str, str] = {}
@@ -73,13 +79,23 @@ class Genius(LyricsProvider):
         """
 
         url = f"https://api.genius.com/songs/{url}"
-        song_response = requests.get(url, headers=self.headers, timeout=10)
+        song_response = self.session.get(
+            url,
+            headers=self.headers,
+            timeout=10,
+            proxies=GlobalConfig.get_parameter("proxies"),
+        )
         url = song_response.json()["response"]["song"]["url"]
 
         soup = None
         counter = 0
         while counter < 4:
-            genius_page_response = requests.get(url, headers=self.headers, timeout=10)
+            genius_page_response = self.session.get(
+                url,
+                headers=self.headers,
+                timeout=10,
+                proxies=GlobalConfig.get_parameter("proxies"),
+            )
 
             if not genius_page_response.ok:
                 counter += 1

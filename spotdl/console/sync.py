@@ -4,7 +4,8 @@ Sync module for the console.
 
 import json
 import logging
-from typing import List
+from pathlib import Path
+from typing import List, Tuple
 
 from spotdl.download.downloader import Downloader
 from spotdl.types.song import Song
@@ -49,7 +50,16 @@ def sync(
             )
 
         # Parse the query
-        songs_list = parse_query(query, downloader.settings["threads"])
+        songs_list = parse_query(
+            query=query,
+            threads=downloader.settings["threads"],
+            use_ytm_data=downloader.settings["ytm_data"],
+            playlist_numbering=downloader.settings["playlist_numbering"],
+            album_type=downloader.settings["album_type"],
+            playlist_retain_track_cover=downloader.settings[
+                "playlist_retain_track_cover"
+            ],
+        )
 
         # Create sync file
         with open(save_path, "w", encoding="utf-8") as save_file:
@@ -81,17 +91,34 @@ def sync(
         return None
 
     # If the query is a single file, download it
-    if len(query) == 1 and query[0].endswith(".spotdl") and not save_path:
+    if (  # pylint: disable=R1702
+        len(query) == 1  # pylint: disable=R1702
+        and query[0].endswith(".spotdl")  # pylint: disable=R1702
+        and not save_path  # pylint: disable=R1702
+    ):
         # Load the sync file
         with open(query[0], "r", encoding="utf-8") as sync_file:
             sync_data = json.load(sync_file)
 
         # Verify the sync file
-        if not isinstance(sync_data, dict) or sync_data.get("type") != "sync":
+        if (
+            not isinstance(sync_data, dict)
+            or sync_data.get("type") != "sync"
+            or sync_data.get("songs") is None
+        ):
             raise ValueError("Sync file is not a valid sync file.")
 
         # Parse the query
-        songs_playlist = parse_query(sync_data["query"], downloader.settings["threads"])
+        songs_playlist = parse_query(
+            query=sync_data["query"],
+            threads=downloader.settings["threads"],
+            use_ytm_data=downloader.settings["ytm_data"],
+            playlist_numbering=downloader.settings["playlist_numbering"],
+            album_type=downloader.settings["album_type"],
+            playlist_retain_track_cover=downloader.settings[
+                "playlist_retain_track_cover"
+            ],
+        )
 
         # Get the names and URLs of previously downloaded songs from the sync file
         old_files = []
@@ -102,13 +129,72 @@ def sync(
                 downloader.settings["format"],
                 downloader.settings["restrict"],
             )
+
             old_files.append((file_name, entry["url"]))
 
         new_urls = [song.url for song in songs_playlist]
 
         # Delete all song files whose URL is no longer part of the latest playlist
         if not downloader.settings["sync_without_deleting"]:
-            to_delete = [path for (path, url) in old_files if url not in new_urls]
+            # Rename songs that have "{list-length}", "{list-position}", "{list-name}",
+            # in the output path so that we don't have to download them again,
+            # and to avoid mangling the directory structure.
+            to_rename: List[Tuple[Path, Path]] = []
+            to_delete = []
+            for path, url in old_files:
+                if url not in new_urls:
+                    to_delete.append(path)
+                else:
+                    new_song = songs_playlist[new_urls.index(url)]
+
+                    new_path = create_file_name(
+                        Song.from_dict(new_song.json),
+                        downloader.settings["output"],
+                        downloader.settings["format"],
+                        downloader.settings["restrict"],
+                    )
+
+                    if path != new_path:
+                        to_rename.append((path, new_path))
+
+            # fix later Downloading duplicate songs in the same playlist
+            # will trigger a re-download of the song. To fix this we have to copy the song
+            # to the new location without removing the old one.
+            for old_path, new_path in to_rename:
+                if old_path.exists():
+                    logger.info("Renaming %s to %s", f"'{old_path}'", f"'{new_path}'")
+                    if new_path.exists():
+                        old_path.unlink()
+                        continue
+
+                    try:
+                        old_path.rename(new_path)
+                    except (PermissionError, OSError) as exc:
+                        logger.debug(
+                            "Could not rename temp file: %s, error: %s", old_path, exc
+                        )
+                else:
+                    logger.debug("%s does not exist.", old_path)
+
+                if downloader.settings["sync_remove_lrc"]:
+                    lrc_file = old_path.with_suffix(".lrc")
+                    new_lrc_file = new_path.with_suffix(".lrc")
+                    if lrc_file.exists():
+                        logger.debug(
+                            "Renaming lrc %s to %s",
+                            f"'{lrc_file}'",
+                            f"'{new_lrc_file}'",
+                        )
+                        try:
+                            lrc_file.rename(new_lrc_file)
+                        except (PermissionError, OSError) as exc:
+                            logger.debug(
+                                "Could not rename lrc file: %s, error: %s",
+                                lrc_file,
+                                exc,
+                            )
+                    else:
+                        logger.debug("%s does not exist.", lrc_file)
 
             for file in to_delete:
                 if file.exists():
@@ -121,6 +207,21 @@ def sync(
                         )
                 else:
                     logger.debug("%s does not exist.", file)
+
+                if downloader.settings["sync_remove_lrc"]:
+                    lrc_file = file.with_suffix(".lrc")
+                    if lrc_file.exists():
+                        logger.debug("Deleting lrc %s", lrc_file)
+                        try:
+                            lrc_file.unlink()
+                        except (PermissionError, OSError) as exc:
+                            logger.debug(
+                                "Could not remove lrc file: %s, error: %s",
+                                lrc_file,
+                                exc,
+                            )
+                    else:
+                        logger.debug("%s does not exist.", lrc_file)
 
             if len(to_delete) == 0:
                 logger.info("Nothing to delete...")

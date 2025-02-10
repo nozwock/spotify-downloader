@@ -99,7 +99,16 @@ class Spotdl:
         - query can be a list of song titles, urls, uris
         """
 
-        return parse_query(query, self.downloader.settings["threads"])
+        return parse_query(
+            query=query,
+            threads=self.downloader.settings["threads"],
+            use_ytm_data=self.downloader.settings["ytm_data"],
+            playlist_numbering=self.downloader.settings["playlist_numbering"],
+            album_type=self.downloader.settings["album_type"],
+            playlist_retain_track_cover=self.downloader.settings[
+                "playlist_retain_track_cover"
+            ],
+        )
 
     def get_download_urls(self, songs: List[Song]) -> List[Optional[str]]:
         """

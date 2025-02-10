@@ -35,28 +35,53 @@ def save(
     save_path = downloader.settings["save_file"]
     m3u_file = downloader.settings["m3u"]
 
-    if save_path is None:
+    to_stdout = save_path == "-"
+
+    if save_path is None and not to_stdout:
         raise DownloaderError("Save file is not specified")
 
     # Parse the query
-    songs = parse_query(query, downloader.settings["threads"])
+    songs = parse_query(
+        query=query,
+        threads=downloader.settings["threads"],
+        use_ytm_data=downloader.settings["ytm_data"],
+        playlist_numbering=downloader.settings["playlist_numbering"],
+        album_type=downloader.settings["album_type"],
+        playlist_retain_track_cover=downloader.settings["playlist_retain_track_cover"],
+    )
     save_data = [song.json for song in songs]
 
     def process_song(song: Song):
-        try:
-            data = downloader.search(song)
-            if data is None:
-                logger.error("Could not find a match for %s", song.display_name)
+        download_url = None
+        if downloader.settings["preload"]:
+            try:
+                download_url = downloader.search(song)
+                if download_url is None:
+                    logger.error("Could not find a match for %s", song.display_name)
+                    return None
 
+                logger.info("Found url for %s: %s", song.display_name, download_url)
+            except Exception as exception:
+                logger.error(
+                    "%s generated an exception: %s", song.display_name, exception
+                )
                 return None
 
-            logger.info("Found url for %s: %s", song.display_name, data)
-
-            return {**song.json, "download_url": data}
+        lyrics = None
+        try:
+            lyrics = downloader.search_lyrics(song)
+            if lyrics is None:
+                logger.debug(
+                    "No lyrics found for %s, lyrics providers: %s",
+                    song.display_name,
+                    ", ".join(
+                        [lprovider.name for lprovider in downloader.lyrics_providers]
+                    ),
+                )
         except Exception as exception:
-            logger.error("%s generated an exception: %s", song.display_name, exception)
+            logger.debug("Could not search for lyrics: %s", exception)
 
-        return None
+        return {**song.json, "download_url": download_url, "lyrics": lyrics}
 
     async def pool_worker(song: Song):
         async with downloader.semaphore:
@@ -66,15 +91,18 @@ def save(
             # hurt performance.
             return await downloader.loop.run_in_executor(None, process_song, song)
 
-    if downloader.settings["preload"]:
-        tasks = [pool_worker(song) for song in songs]
+    tasks = [pool_worker(song) for song in songs]
 
-        # call all task asynchronously, and wait until all are finished
-        save_data = list(downloader.loop.run_until_complete(asyncio.gather(*tasks)))
+    # call all task asynchronously, and wait until all are finished
+    save_data = list(downloader.loop.run_until_complete(asyncio.gather(*tasks)))
 
-    # Save the songs to a file
-    with open(save_path, "w", encoding="utf-8") as save_file:
-        json.dump(save_data, save_file, indent=4, ensure_ascii=False)
+    if to_stdout:
+        # Print the songs to stdout
+        print(json.dumps(save_data, indent=4, ensure_ascii=False))
+    elif save_path:
+        # Save the songs to a file
+        with open(save_path, "w", encoding="utf-8") as save_file:
+            json.dump(save_data, save_file, indent=4, ensure_ascii=False)
 
     if m3u_file:
         gen_m3u_files(
@@ -86,9 +114,10 @@ def save(
             False,
         )
 
-    logger.info(
-        "Saved %s song%s to %s",
-        len(save_data),
-        "s" if len(save_data) > 1 else "",
-        save_path,
-    )
+    if not to_stdout:
+        logger.info(
+            "Saved %s song%s to %s",
+            len(save_data),
+            "s" if len(save_data) > 1 else "",
+            save_path,
+        )

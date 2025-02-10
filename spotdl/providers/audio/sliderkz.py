@@ -9,10 +9,15 @@ import requests
 
 from spotdl.providers.audio.base import AudioProvider
 from spotdl.types.result import Result
+from spotdl.utils.config import GlobalConfig
 
 __all__ = ["SliderKZ"]
 
 logger = logging.getLogger(__name__)
+logger.critical(
+    "SliderKZ module is disabled due to slider.kz being shutdown. "
+    "Please remove all references to this module."
+)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/111.0"
@@ -46,9 +51,10 @@ class SliderKZ(AudioProvider):
         while not search_results and max_retries < 3:
             try:
                 search_response = requests.get(
-                    url="https://slider.kz/vk_auth.php?q=" + search_term,
+                    url="https://hayqbhgr.slider.kz/vk_auth.php?q=" + search_term,
                     headers=HEADERS,
                     timeout=5,
+                    proxies=GlobalConfig.get_parameter("proxies"),
                 )
 
                 # Check if the response is valid
@@ -74,7 +80,7 @@ class SliderKZ(AudioProvider):
         for result in search_results["audios"][""]:
             # urls from slider.kz sometimes are relative, so we need to add the domain
             if "https://" not in result["url"]:
-                result["url"] = "https://slider.kz/" + result["url"]
+                result["url"] = "https://hayqbhgr.slider.kz/" + result["url"]
 
             results.append(
                 Result(
